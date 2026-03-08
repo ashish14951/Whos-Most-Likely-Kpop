@@ -231,6 +231,22 @@
         <div id="result-screen" class="screen">
             <h1>Game Results</h1>
             
+            <!-- Dashboard Stats -->
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; margin-bottom: 25px; width: 100%;">
+                <div class="stat-box" style="flex: 1; min-width: 130px; padding: 15px;">
+                    <div class="stat-value" id="main-loyalty-stat">0</div>
+                    <p style="margin: 0; font-size: 0.85rem; font-weight: bold;">Loyalty Bonus</p>
+                </div>
+                <div class="stat-box" style="flex: 1; min-width: 130px; padding: 15px;">
+                    <div class="stat-value" id="main-agreement-stat">0%</div>
+                    <p style="margin: 0; font-size: 0.85rem; font-weight: bold;">Fandom Consensus</p>
+                </div>
+                <div class="stat-box" id="main-couple-box" style="display: none; flex: 1; min-width: 130px; padding: 15px;">
+                    <div class="stat-value" id="main-couple-stat" style="color: #e84393;">0%</div>
+                    <p style="margin: 0; font-size: 0.85rem; font-weight: bold;">Couple Telepathy</p>
+                </div>
+            </div>
+
             <!-- Downloadable Card -->
             <div id="result-card" class="result-card-container">
                 <h2 style="font-size: 1.2rem; margin-bottom: 15px; color: var(--text-dark);">K-POP FANDOM ID</h2>
@@ -464,16 +480,34 @@
             });
         }
 
+        // Smart Fandom Round Generator
+        function generateRoundData() {
+            return [...allScenarios].sort(() => 0.5 - Math.random()).slice(0, 10).map(q => {
+                let bMem = q.btsWeight;
+                let sMem = q.svtWeight;
+
+                // 30% chance to replace one of the correct answers with a random distractor to make it harder
+                if (Math.random() > 0.7) {
+                    if (Math.random() > 0.5) {
+                        do { bMem = btsMembers[Math.floor(Math.random() * btsMembers.length)]; } while (bMem === q.btsWeight);
+                    } else {
+                        do { sMem = svtMembers[Math.floor(Math.random() * svtMembers.length)]; } while (sMem === q.svtWeight);
+                    }
+                }
+
+                const leftBts = Math.random() > 0.5;
+                return {
+                    qData: q,
+                    duo: leftBts ? [bMem, sMem] : [sMem, bMem],
+                    groups: leftBts ? ["BTS", "SVT"] : ["SVT", "BTS"]
+                };
+            });
+        }
+
         // Bias Screen Ready Button
         document.getElementById('start-game-btn').onclick = () => {
             if (gameMode === 'solo') {
-                // Generate 10 random questions for Solo
-                activeScenarios = [...allScenarios].sort(() => 0.5 - Math.random()).slice(0, 10).map(q => {
-                    const bMem = btsMembers[Math.floor(Math.random() * btsMembers.length)];
-                    const sMem = svtMembers[Math.floor(Math.random() * svtMembers.length)];
-                    const leftBts = Math.random() > 0.5;
-                    return { qData: q, duo: leftBts ? [bMem, sMem] : [sMem, bMem], groups: leftBts ? ["BTS", "SVT"] : ["SVT", "BTS"] };
-                });
+                activeScenarios = generateRoundData();
                 showScreen('game-screen');
                 loadQuestion();
             } else {
@@ -496,12 +530,7 @@
                 showScreen('game-screen');
                 if (isHost) {
                     // Host generates the game board and sends it to guest
-                    activeScenarios = [...allScenarios].sort(() => 0.5 - Math.random()).slice(0, 10).map(q => {
-                        const bMem = btsMembers[Math.floor(Math.random() * btsMembers.length)];
-                        const sMem = svtMembers[Math.floor(Math.random() * svtMembers.length)];
-                        const leftBts = Math.random() > 0.5;
-                        return { qData: q, duo: leftBts ? [bMem, sMem] : [sMem, bMem], groups: leftBts ? ["BTS", "SVT"] : ["SVT", "BTS"] };
-                    });
+                    activeScenarios = generateRoundData();
                     connection.send({ type: 'sync_game', questions: activeScenarios });
                     loadQuestion();
                 }
@@ -550,15 +579,18 @@
                 }
             });
 
-            let lp = 50;
-            if (currentDuo[0] === q.btsWeight || currentDuo[0] === q.svtWeight) lp = q.consensus[0];
-            else if (currentDuo[1] === q.btsWeight || currentDuo[1] === q.svtWeight) lp = q.consensus[1];
-            else lp = Math.floor(Math.random() * 60) + 20; 
+            // Accurate Scoring Evaluator mapping
+            let leftPerc = 50; let rightPerc = 50;
+            if (groups[0] === "BTS" && currentDuo[0] === q.btsWeight) { leftPerc = q.consensus[0]; rightPerc = q.consensus[1]; }
+            else if (groups[0] === "SVT" && currentDuo[0] === q.svtWeight) { leftPerc = q.consensus[1]; rightPerc = q.consensus[0]; }
+            else if (groups[1] === "BTS" && currentDuo[1] === q.btsWeight) { rightPerc = q.consensus[0]; leftPerc = q.consensus[1]; }
+            else if (groups[1] === "SVT" && currentDuo[1] === q.svtWeight) { rightPerc = q.consensus[1]; leftPerc = q.consensus[0]; }
+            else { leftPerc = 50; rightPerc = 50; } // Fallback for double-distractor rounds
             
-            document.getElementById('consensus-left').textContent = `FANS SAY: ${lp}%`;
-            document.getElementById('consensus-right').textContent = `FANS SAY: ${100 - lp}%`;
-            document.getElementById('consensus-left').dataset.val = lp;
-            document.getElementById('consensus-right').dataset.val = 100 - lp;
+            document.getElementById('consensus-left').textContent = `FANS SAY: ${leftPerc}%`;
+            document.getElementById('consensus-right').textContent = `FANS SAY: ${rightPerc}%`;
+            document.getElementById('consensus-left').dataset.val = leftPerc;
+            document.getElementById('consensus-right').dataset.val = rightPerc;
         }
 
         window.selectMember = function(idx) {
@@ -570,7 +602,7 @@
             const myCard = document.getElementById(idx === 0 ? 'card-left' : 'card-right');
             myCard.classList.add('selected');
 
-            // Consensus & Loyalty Points
+            // Consensus & Loyalty Points logic accurately accumulated
             const val = parseInt(document.getElementById(idx === 0 ? 'consensus-left' : 'consensus-right').dataset.val);
             stats.agreementSum += val;
             if (name === selectedBtsBias || name === selectedSvtBias) {
@@ -644,9 +676,12 @@
 
         function showResults() {
             showScreen('result-screen');
-            document.getElementById('loyalty-stat').textContent = stats.loyalty;
+            
             const avg = Math.round(stats.agreementSum / 10);
-            document.getElementById('agreement-stat').textContent = `${avg}%`;
+
+            // Update Main UI Dashboards
+            document.getElementById('main-loyalty-stat').textContent = stats.loyalty;
+            document.getElementById('main-agreement-stat').textContent = `${avg}%`;
 
             let tier = ""; let summary = "";
             if (avg >= 75) { tier = "🏆 S-TIER: Fandom Historian"; summary = "You know exactly how the fandom thinks! Your knowledge of the lore, inside jokes, and member personalities is absolute perfection."; } 
@@ -656,7 +691,7 @@
 
             if (stats.loyalty >= 150) summary += ` Plus, your absolute loyalty to ${selectedBtsBias} and ${selectedSvtBias} is legendary.`;
 
-            // Update DOM
+            // Update Downloadable Card
             document.getElementById('card-tier').textContent = tier;
             document.getElementById('card-biases').textContent = `${selectedBtsBias} & ${selectedSvtBias}`;
             document.getElementById('card-agreement').textContent = `${avg}%`;
@@ -664,7 +699,13 @@
             document.getElementById('card-summary').textContent = summary;
 
             if (gameMode === 'multi') {
-                const compatibility = (stats.coupleMatches / 10) * 100;
+                const compatibility = Math.round((stats.coupleMatches / 10) * 100);
+                
+                // Show on Main Dashboard
+                document.getElementById('main-couple-box').style.display = 'block';
+                document.getElementById('main-couple-stat').textContent = `${compatibility}%`;
+                
+                // Show on Downloadable Card
                 document.getElementById('couple-stat-row').style.display = 'flex';
                 document.getElementById('card-couple').textContent = `${compatibility}%`;
                 document.getElementById('card-summary').innerHTML += `<br><br><b style="color:#e84393">Couple Compatibility: ${compatibility}% (${stats.coupleMatches}/10 matches!)</b>`;
