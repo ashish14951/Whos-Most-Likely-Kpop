@@ -132,9 +132,22 @@
             content: "OFFICIAL TICKET"; position: absolute; top: 15px; right: -35px; transform: rotate(45deg);
             background: var(--bias-gold); color: black; font-size: 0.6rem; font-weight: bold; padding: 5px 40px; letter-spacing: 2px;
         }
+
+        /* NEW STYLES FOR THE UPGRADED CARD */
+        .card-header-layout { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; border-bottom: 2px solid var(--bts-purple); padding-bottom: 10px; }
+        .card-portraits { display: flex; align-items: center; }
+        .card-portrait-img { width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid white; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin-left: -10px; background: #eee; position: relative; }
+        .card-portraits img:first-child { margin-left: 0; z-index: 2; }
+        .card-portraits img:last-child { z-index: 1; }
+
         .stat-row { display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px; }
         .stat-label { font-weight: 600; color: #555; font-size: 0.9rem;}
         .stat-value { font-weight: bold; color: var(--bts-purple); font-size: 1.1rem; }
+        
+        .stat-row.controversial { flex-direction: column; align-items: flex-start; background: rgba(0,0,0,0.03); padding: 12px; border-radius: 12px; border: none; margin-top: 15px; margin-bottom: 5px; }
+        .stat-row.controversial .stat-label { margin-bottom: 8px; color: #e17055; font-size: 0.85rem; }
+        .stat-row.controversial .stat-value { font-size: 0.85rem; font-weight: normal; color: var(--text-dark); line-height: 1.4; }
+
         .barcode { width: 100%; height: 40px; background: repeating-linear-gradient(90deg, #000, #000 2px, transparent 2px, transparent 4px, #000 4px, #000 8px, transparent 8px, transparent 10px); opacity: 0.6; margin-top: 20px;}
 
         #effect-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100; }
@@ -249,10 +262,19 @@
 
             <!-- Downloadable Card -->
             <div id="result-card" class="result-card-container">
-                <h2 style="font-size: 1.2rem; margin-bottom: 15px; color: var(--text-dark);">K-POP FANDOM ID</h2>
+                <div class="card-header-layout">
+                    <h2 style="font-size: 1.2rem; color: var(--text-dark); margin: 0; text-align: left; line-height: 1.2;">K-POP<br>FANDOM ID</h2>
+                    <div class="card-portraits" id="card-portraits-container">
+                        <!-- Dynamic Portraits Injected Here -->
+                    </div>
+                </div>
                 <div class="stat-row">
                     <span class="stat-label">Player Biases:</span>
-                    <span class="stat-value" id="card-biases">RM & Mingyu</span>
+                    <span class="stat-value" id="card-biases"></span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Bias Wrecker:</span>
+                    <span class="stat-value" id="card-wrecker" style="color: #e17055;">None</span>
                 </div>
                 <div class="stat-row">
                     <span class="stat-label">Fandom Tier:</span>
@@ -262,11 +284,14 @@
                     <span class="stat-label">Consensus Score:</span>
                     <span class="stat-value" id="card-agreement">0%</span>
                 </div>
-                <div class="stat-row">
-                    <span class="stat-label">Loyalty Points:</span>
-                    <span class="stat-value" id="card-loyalty">0</span>
+                
+                <!-- New Controversial Take Row -->
+                <div class="stat-row controversial" id="controversial-row">
+                    <span class="stat-label">Most Controversial Take (<span id="card-controversial-pct"></span>% agreed):</span>
+                    <span class="stat-value"><i id="card-controversial-text"></i><br><br><b>Your Pick: <span id="card-controversial-member" style="color: var(--bts-purple);"></span></b></span>
                 </div>
-                <div class="stat-row" id="couple-stat-row" style="display: none;">
+
+                <div class="stat-row" id="couple-stat-row" style="display: none; border-bottom: none; padding-top: 10px;">
                     <span class="stat-label" style="color: #e84393;">Couple Telepathy:</span>
                     <span class="stat-value" id="card-couple" style="color: #e84393;">0%</span>
                 </div>
@@ -347,7 +372,16 @@
         let gameMode = 'solo'; 
         let selectedBtsBias = null, selectedSvtBias = null;
         let currentQuestionIdx = 0, currentDuo = [], canSelect = true, activeScenarios = [];
-        let stats = { biasPicks: 0, agreementSum: 0, loyalty: 0, coupleMatches: 0 };
+        
+        // UPGRADED STATS OBJECT: Tracks Wrecker & Controversial Picks
+        let stats = { 
+            biasPicks: 0, 
+            agreementSum: 0, 
+            loyalty: 0, 
+            coupleMatches: 0,
+            pickCounts: {},
+            mostControversial: { percent: 100, text: '', member: '' }
+        };
         
         // P2P Multiplayer Variables
         let peer = null;
@@ -374,7 +408,7 @@
             const fallbackStr = getAvatar(name);
             return `
                 <div class="img-loader"></div>
-                <img src="${imgSrc}" alt="${name}" style="opacity: 0;"
+                <img src="${imgSrc}" alt="${name}" style="opacity: 0;" crossorigin="anonymous"
                      onload="this.previousElementSibling.style.display='none'; this.style.opacity=1;"
                      onerror="this.onerror=null; this.src='${fallbackStr}'; this.previousElementSibling.style.display='none'; this.style.opacity=1;">
             `;
@@ -585,7 +619,7 @@
             else if (groups[0] === "SVT" && currentDuo[0] === q.svtWeight) { leftPerc = q.consensus[1]; rightPerc = q.consensus[0]; }
             else if (groups[1] === "BTS" && currentDuo[1] === q.btsWeight) { rightPerc = q.consensus[0]; leftPerc = q.consensus[1]; }
             else if (groups[1] === "SVT" && currentDuo[1] === q.svtWeight) { rightPerc = q.consensus[1]; leftPerc = q.consensus[0]; }
-            else { leftPerc = 50; rightPerc = 50; } // Fallback for double-distractor rounds
+            else { leftPerc = 50; rightPerc = 50; } 
             
             document.getElementById('consensus-left').textContent = `FANS SAY: ${leftPerc}%`;
             document.getElementById('consensus-right').textContent = `FANS SAY: ${rightPerc}%`;
@@ -605,6 +639,20 @@
             // Consensus & Loyalty Points logic accurately accumulated
             const val = parseInt(document.getElementById(idx === 0 ? 'consensus-left' : 'consensus-right').dataset.val);
             stats.agreementSum += val;
+            
+            // UPGRADE: Track Pick Counts for Bias Wrecker
+            stats.pickCounts[name] = (stats.pickCounts[name] || 0) + 1;
+
+            // UPGRADE: Track Most Controversial Take
+            const currentQ = activeScenarios[currentQuestionIdx].qData;
+            if (val < stats.mostControversial.percent) {
+                stats.mostControversial = {
+                    percent: val,
+                    member: name,
+                    text: currentQ.text
+                };
+            }
+
             if (name === selectedBtsBias || name === selectedSvtBias) {
                 stats.loyalty += 50; 
                 triggerHearts(myCard);
@@ -691,7 +739,37 @@
 
             if (stats.loyalty >= 150) summary += ` Plus, your absolute loyalty to ${selectedBtsBias} and ${selectedSvtBias} is legendary.`;
 
-            // Update Downloadable Card
+            // UPGRADE: Calculate Bias Wrecker
+            let wrecker = "None";
+            let maxPicks = 0;
+            for (const [member, count] of Object.entries(stats.pickCounts)) {
+                if (member !== selectedBtsBias && member !== selectedSvtBias) {
+                    if (count > maxPicks) {
+                        maxPicks = count;
+                        wrecker = member;
+                    }
+                }
+            }
+            document.getElementById('card-wrecker').textContent = wrecker !== "None" ? `${wrecker} (${maxPicks} picks)` : "100% Loyal (No Wrecker)";
+
+            // UPGRADE: Set Controversial Take
+            if (stats.mostControversial.text) {
+                document.getElementById('card-controversial-pct').textContent = stats.mostControversial.percent;
+                document.getElementById('card-controversial-member').textContent = stats.mostControversial.member;
+                document.getElementById('card-controversial-text').textContent = `"${stats.mostControversial.text}"`;
+            }
+
+            // UPGRADE: Inject Bias Portraits into the ID Card
+            const btsImg = getRealImage(selectedBtsBias, 'BTS');
+            const svtImg = getRealImage(selectedSvtBias, 'SVT');
+            const btsFb = getAvatar(selectedBtsBias);
+            const svtFb = getAvatar(selectedSvtBias);
+            document.getElementById('card-portraits-container').innerHTML = `
+                <img src="${btsImg}" class="card-portrait-img" crossorigin="anonymous" onerror="this.onerror=null; this.src='${btsFb}';">
+                <img src="${svtImg}" class="card-portrait-img" crossorigin="anonymous" onerror="this.onerror=null; this.src='${svtFb}';">
+            `;
+
+            // Update Downloadable Card Text
             document.getElementById('card-tier').textContent = tier;
             document.getElementById('card-biases').textContent = `${selectedBtsBias} & ${selectedSvtBias}`;
             document.getElementById('card-agreement').textContent = `${avg}%`;
@@ -718,7 +796,8 @@
             card.style.boxShadow = "none";
             card.style.transform = "scale(1)";
             
-            html2canvas(card, { backgroundColor: null, scale: 2 }).then(canvas => {
+            // useCORS is required so html2canvas can draw the Bing images onto the final export
+            html2canvas(card, { backgroundColor: null, scale: 2, useCORS: true }).then(canvas => {
                 const link = document.createElement('a');
                 link.download = 'KPop-Fandom-ID.png';
                 link.href = canvas.toDataURL("image/png");
